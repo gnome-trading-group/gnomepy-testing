@@ -1,0 +1,39 @@
+.env
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+
+### Eclipse ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# pycache
+__pycache__/
+**/__pycache__/
+**/**/*.pyc
+
+### VS Code ###
+.vscode/
+
+### Mac OS ###
+.DS_Store
+
+.m2

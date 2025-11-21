@@ -37,3 +37,22 @@ __pycache__/
 .DS_Store
 
 .m2
+
+# Market Data Testing
+/output/
+*.jsonl
+*.log
+
+# Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv

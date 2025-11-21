@@ -1,17 +1,22 @@
 [project]
 name = "gnomepy-testing"
-version = "0.1.0"
-description = ""
+version = "0.2.0"
+description = "Testing framework for validating market data implementations"
 authors = [
     {name = "mprey",email = "masonprey7@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "gnomepy (>=0.1.2,<0.2.0)"
+    "gnomepy (==0.1.6)",
+    "websockets (>=15.0.1,<16.0.0)"
 ]
 
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.0.1"
+

@@ -15,7 +15,9 @@ COPY .m2 /root/.m2
 
 COPY docker/pom.xml /app/java/pom.xml
 COPY docker/settings.xml /app/java/settings.xml
-RUN mvn dependency:copy-dependencies -DoutputDirectory=/app/java/lib
+
+RUN mvn versions:use-latest-releases -DallowSnapshots=false -Dincludes=group.gnometrading:gnome-orchestrator && \
+    mvn dependency:copy-dependencies -DoutputDirectory=/app/java/lib
 
 FROM --platform=linux/amd64 python:3.13-slim
 

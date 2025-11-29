@@ -4,19 +4,23 @@ help:
 	@echo "Market Data Testing Framework (Capture Proxy Architecture)"
 	@echo ""
 	@echo "Available commands:"
-	@echo "  make install        - Install Python dependencies with Poetry"
-	@echo "  make build          - Build Docker image"
-	@echo "  make test-proxy     - Run proxy server"
-	@echo "  make test-client    - Run Python client (requires proxy running)"
-	@echo "  make docker-build   - Build Docker image"
-	@echo "  make docker-test    - Run test in Docker"
-	@echo "  make clean          - Clean output files"
-	@echo "  make docker-clean   - Clean Docker images"
+	@echo "  make install              - Install Python dependencies with Poetry"
+	@echo "  make build                - Build Docker image"
+	@echo "  make test-proxy           - Run proxy server"
+	@echo "  make test-client          - Run Python client (requires proxy running)"
+	@echo "  make docker-build         - Build Docker image"
+	@echo "  make docker-test          - Run test in Docker"
+	@echo "  make check-maven-updates  - Check for gnome-orchestrator updates"
+	@echo "  make update-maven-deps    - Update gnome-orchestrator to latest version"
+	@echo "  make clean                - Clean output files"
+	@echo "  make docker-clean         - Clean Docker images"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make test-proxy LISTING_ID=1 DURATION=60"
 	@echo "  make test-client LISTING_ID=1 DURATION=30"
 	@echo "  make docker-test LISTING_ID=1 DURATION=60"
+	@echo "  make check-maven-updates"
+	@echo "  make update-maven-deps"
 
 install:
 	poetry install
@@ -25,6 +29,15 @@ build: docker-build
 
 docker-build:
 	docker-compose build
+
+check-maven-updates:
+	@echo "Checking for gnome-orchestrator updates..."
+	@cd docker && mvn versions:display-dependency-updates -Dincludes=group.gnometrading:gnome-orchestrator
+
+update-maven-deps:
+	@echo "Updating gnome-orchestrator to latest version..."
+	@cd docker && mvn versions:use-latest-releases -DallowSnapshots=false -Dincludes=group.gnometrading:gnome-orchestrator
+	@echo "Updated! Check docker/pom.xml for the new version."
 
 test-proxy:
 	@echo "Running Capture Proxy server..."
@@ -49,6 +62,15 @@ test-comparison:
 		--python output/python_listing_$(or $(LISTING_ID),1).bin \
 		--java output/java_listing_$(or $(LISTING_ID),1).bin \
 		--ignore-fields timestamp_recv
+
+test-print-output:
+	@echo "Printing output..."
+	poetry run python -m gnomepy_testing.compare_outputs \
+		--python output/python_listing_$(or $(LISTING_ID),1).bin \
+		--java output/java_listing_$(or $(LISTING_ID),1).bin \
+		--ignore-fields timestamp_recv \
+		--print \
+		--max-messages $(or $(MAX_MESSAGES),10)
 
 docker-test:
 	docker-compose run --rm \

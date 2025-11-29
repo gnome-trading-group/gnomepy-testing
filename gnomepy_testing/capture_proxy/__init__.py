@@ -13,8 +13,6 @@ from .server import CaptureProxyServer
 from .exchange_connector import (
     ExchangeConnector,
     HyperliquidConnector,
-    BinanceConnector,
-    CoinbaseConnector,
     ExampleFixExchangeConnector,
     create_exchange_connector
 )
@@ -36,8 +34,6 @@ __all__ = [
     'CaptureProxyServer',
     'ExchangeConnector',
     'HyperliquidConnector',
-    'BinanceConnector',
-    'CoinbaseConnector',
     'ExampleFixExchangeConnector',
     'create_exchange_connector',
     'Transport',

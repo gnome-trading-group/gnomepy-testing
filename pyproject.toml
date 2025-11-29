@@ -9,7 +9,8 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "gnomepy (==0.1.6)",
-    "websockets (>=15.0.1,<16.0.0)"
+    "websockets (>=15.0.1,<16.0.0)",
+    "sortedcontainers (>=2.4.0,<3.0.0)"
 ]
 
 

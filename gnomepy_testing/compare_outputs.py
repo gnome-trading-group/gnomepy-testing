@@ -91,55 +91,91 @@ def compare_messages(python_msg: Any, java_msg: Any, message_num: int,
                               python_msg, java_msg)
 
 
-def compare_files(python_file: Path, java_file: Path, 
-                 ignore_fields: set[str]) -> ComparisonResult:
+def _print_message(msg_num: int, python_msg: Any, java_msg: Any, ignore_fields: set[str]):
+    """Print a message with its context."""
+    print(f"\nMessage #{msg_num}:")
+
+    if python_msg:
+        python_context = _get_message_context(python_msg, ignore_fields)
+        print(f"  Python:")
+        for key, value in python_context.items():
+            print(f"    {key}: {value}")
+
+    if java_msg:
+        java_context = _get_message_context(java_msg, ignore_fields)
+        print(f"  Java:")
+        for key, value in java_context.items():
+            print(f"    {key}: {value}")
+
+
+def compare_files(python_file: Path, java_file: Path,
+                 ignore_fields: set[str], print_all: bool = False,
+                 max_messages: int | None = None) -> ComparisonResult:
     """
     Compare two binary output files.
-    
+
     Args:
         python_file: Path to Python output file
         java_file: Path to Java output file
         ignore_fields: Set of field names to ignore in comparison
-        
+        print_all: If True, print all messages regardless of mismatch status
+        max_messages: Maximum number of messages to process (None for all)
+
     Returns:
         ComparisonResult with comparison details
     """
     result = ComparisonResult()
-    
+
     with open(python_file, 'rb') as f:
         python_bytes = f.read()
-    
+
     with open(java_file, 'rb') as f:
         java_bytes = f.read()
-    
+
     python_store = DataStore.from_bytes(python_bytes, SchemaType.MBP_10)
     java_store = DataStore.from_bytes(java_bytes, SchemaType.MBP_10)
-    
+
     python_messages = [msg for msg in python_store]
     java_messages = [msg for msg in java_store]
-    
-    result.total_messages = min(len(python_messages), len(java_messages))
-    result.python_only_messages = max(0, len(python_messages) - len(java_messages))
-    result.java_only_messages = max(0, len(java_messages) - len(python_messages))
-    
+
+    messages_to_process = min(len(python_messages), len(java_messages))
+    if max_messages is not None:
+        messages_to_process = min(messages_to_process, max_messages)
+
+    result.total_messages = messages_to_process
+    result.python_only_messages = max(0, len(python_messages) - messages_to_process)
+    result.java_only_messages = max(0, len(java_messages) - messages_to_process)
+
     for i, (python_msg, java_msg) in enumerate(zip(python_messages, java_messages), 1):
+        if i > messages_to_process:
+            break
+
+        if print_all:
+            _print_message(i, python_msg, java_msg, ignore_fields)
+
         compare_messages(python_msg, java_msg, i, ignore_fields, result)
-    
+
     return result
 
 
-def _get_message_context(msg: Any) -> dict[str, Any]:
+def _get_message_context(msg: Any, ignore_fields: set[str]) -> dict[str, Any]:
     """Extract key identifying fields from a message for context."""
     context = {}
-
-    for field in ['sequence', 'timestamp_event', 'exchange_id', 'security_id', 'action', 'side']:
-        if hasattr(msg, field):
-            context[field] = getattr(msg, field)
+    for field_name in dir(msg):
+        if field_name.startswith('_'):
+            continue
+        if field_name in ignore_fields:
+            continue
+        if isinstance(getattr(type(msg), field_name, None), property):
+            continue
+        if callable(getattr(msg, field_name)):
+            continue
+        context[field_name] = getattr(msg, field_name)
 
     return context
 
 
-def print_results(result: ComparisonResult):
+def print_results(result: ComparisonResult, ignore_fields: set[str]):
     """Print comparison results."""
     print()
     print("=" * 80)
@@ -168,8 +204,8 @@ def print_results(result: ComparisonResult):
             print(f"Message #{msg_num}:")
 
             if python_msg and java_msg:
-                python_context = _get_message_context(python_msg)
-                java_context = _get_message_context(java_msg)
+                python_context = _get_message_context(python_msg, ignore_fields)
+                java_context = _get_message_context(java_msg, ignore_fields)
 
                 if python_context.get('sequence') == java_context.get('sequence'):
                     print(f"  Sequence: {python_context.get('sequence', 'N/A')}")
@@ -214,27 +250,36 @@ def main():
     parser.add_argument('--ignore-fields', '-i', type=str, nargs='*',
                        default=['timestamp_recv'],
                        help='Fields to ignore in comparison (default: timestamp_recv)')
-    
+    parser.add_argument('--print', dest='print_all', action='store_true',
+                       help='Print all messages regardless of mismatch status')
+    parser.add_argument('-n', '--max-messages', type=int, default=None,
+                       help='Maximum number of messages to process (default: all)')
+
     args = parser.parse_args()
-    
+
     if not args.python.exists():
         print(f"ERROR: Python output file not found: {args.python}")
         sys.exit(1)
-    
+
     if not args.java.exists():
         print(f"ERROR: Java output file not found: {args.java}")
         sys.exit(1)
-    
+
     print(f"Comparing outputs:")
     print(f"  Python: {args.python}")
     print(f"  Java:   {args.java}")
     print(f"  Ignoring fields: {', '.join(args.ignore_fields)}")
-    
+    if args.max_messages is not None:
+        print(f"  Max messages: {args.max_messages}")
+    if args.print_all:
+        print(f"  Print all messages: enabled")
+
     ignore_fields = set(args.ignore_fields)
-    result = compare_files(args.python, args.java, ignore_fields)
-    
-    print_results(result)
-    
+    result = compare_files(args.python, args.java, ignore_fields,
+                          print_all=args.print_all, max_messages=args.max_messages)
+
+    print_results(result, ignore_fields)
+
     sys.exit(0 if result.is_success() else 1)
 
 

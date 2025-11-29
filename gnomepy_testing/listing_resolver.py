@@ -27,7 +27,8 @@ class ListingInfo:
     exchange_name: str
     security_id: int
     security_symbol: str
-    exchange_security_symbol: str
+    exchange_security_id: str | None
+    exchange_security_symbol: str | None
 
     def __str__(self) -> str:
         return f"{self.exchange_name}:{self.security_symbol} (Listing ID: {self.listing_id})"
@@ -74,6 +75,7 @@ class ListingResolver:
 
             exchange_id = listing_data.exchange_id
             security_id = listing_data.security_id
+            exchange_security_id = listing_data.exchange_security_id
             exchange_security_symbol = listing_data.exchange_security_symbol
 
             if not all([exchange_id, security_id]):
@@ -105,6 +107,7 @@ class ListingResolver:
                 exchange_name=exchange_name.upper(),
                 security_id=security_id,
                 security_symbol=security_symbol,
+                exchange_security_id=exchange_security_id,
                 exchange_security_symbol=exchange_security_symbol
             )
 

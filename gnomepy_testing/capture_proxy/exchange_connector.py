@@ -167,9 +167,8 @@ class HyperliquidConnector(ExchangeConnector):
         ]
 
 
-class BinanceConnector(ExchangeConnector):
-    """Binance WebSocket connector (JSON over WebSocket)."""
-
+class LighterConnector(ExchangeConnector):
+    """Lighter WebSocket connector (JSON over WebSocket)."""
     def get_transport_type(self) -> TransportType:
         return TransportType.WEBSOCKET
 
@@ -177,32 +176,21 @@ class BinanceConnector(ExchangeConnector):
         return ProtocolType.JSON_WS
 
     def get_connection_url(self) -> str:
-        symbol = self.listing_info.exchange_security_symbol.lower()
-        stream = f"{symbol}@depth10@100ms"
-        return f"wss://stream.binance.com:9443/ws/{stream}"
+        return "wss://mainnet.zklighter.elliot.ai/stream"
 
     def get_subscribe_messages(self) -> list[dict] | None:
-        return None
-
-
-class CoinbaseConnector(ExchangeConnector):
-    """Coinbase WebSocket connector (JSON over WebSocket)."""
-
-    def get_transport_type(self) -> TransportType:
-        return TransportType.WEBSOCKET
-
-    def get_protocol_type(self) -> ProtocolType:
-        return ProtocolType.JSON_WS
-
-    def get_connection_url(self) -> str:
-        return "wss://ws-feed.exchange.coinbase.com"
-
-    def get_subscribe_messages(self) -> list[dict] | None:
-        return [{
-            "type": "subscribe",
-            "product_ids": [self.listing_info.security_symbol],
-            "channels": ["level2"]
-        }]
+        # { "type": "subscribe", "channel": "order_book/{MARKET_INDEX}"}
+        # { "type": "subscribe", "channel": "trade/{MARKET_INDEX}" }
+        return [
+            {
+                "type": "subscribe",
+                "channel": f"order_book/{self.listing_info.exchange_security_id}"
+            },
+            {
+                "type": "subscribe",
+                "channel": f"trade/{self.listing_info.exchange_security_id}"
+            },
+        ]
 
 
 class ExampleFixExchangeConnector(ExchangeConnector):
@@ -253,10 +241,8 @@ def create_exchange_connector(
 
     if exchange_name == "HYPERLIQUID":
         return HyperliquidConnector(listing_info, on_message)
-    elif exchange_name == "BINANCE":
-        return BinanceConnector(listing_info, on_message)
-    elif exchange_name == "COINBASE":
-        return CoinbaseConnector(listing_info, on_message)
+    elif exchange_name == "LIGHTER":
+        return LighterConnector(listing_info, on_message)
     else:
         raise ValueError(f"Unsupported exchange: {exchange_name}")
 

@@ -4,8 +4,10 @@ Exchange-specific parsers for converting exchange messages to gnomepy schema obj
 Each parser maintains state between messages as needed for the specific exchange.
 Each parser also knows which transport and protocol it needs.
 """
+import json
 import logging
 import time
+import urllib.request
 from abc import ABC, abstractmethod
 from decimal import Decimal
 from typing import Callable, Any
@@ -317,6 +319,141 @@ class LighterParser(ExchangeParser):
         return depth
 
 
+class BinanceParser(ExchangeParser):
+    """Parser for Binance incremental depth and trade messages."""
+
+    MAX_LEVELS = 10
+
+    def __init__(self, listing_info: ListingInfo):
+        super().__init__(listing_info)
+        self.last_trade_price = None
+        self.last_trade_size = None
+        self.last_sequence_number = None
+        self.bids = SortedList(key=lambda x: -x["price"])
+        self.asks = SortedList(key=lambda x: x["price"])
+        self.snapshot_fetched = False
+        self.snapshot_last_update_id = None
+
+    def get_transport_type(self) -> TransportType:
+        return TransportType.WEBSOCKET
+
+    def get_protocol_type(self) -> ProtocolType:
+        return ProtocolType.JSON_WS
+
+    def parse(self, data: dict, write_message: Callable[[MBP10], None]) -> None:
+        if "result" in data:
+            return
+        event = data.get("e")
+        if event == "depthUpdate":
+            self._handle_depth_update(data, write_message)
+        elif event == "trade":
+            self._handle_trade(data, write_message)
+
+    def _fetch_snapshot(self) -> None:
+        symbol = self.listing_info.exchange_security_symbol.upper()
+        url = f"https://api.binance.com/api/v3/depth?symbol={symbol}&limit=100"
+        with urllib.request.urlopen(url) as resp:
+            snapshot = json.loads(resp.read())
+        self.snapshot_last_update_id = snapshot["lastUpdateId"]
+        for bid in snapshot["bids"]:
+            self.bids.add(self._to_fixed(bid))
+        for ask in snapshot["asks"]:
+            self.asks.add(self._to_fixed(ask))
+        self.snapshot_fetched = True
+
+    def _to_fixed(self, level: list[str]) -> dict:
+        return {
+            "price": int(Decimal(level[0]) * Decimal(FIXED_PRICE_SCALE)),
+            "size": int(Decimal(level[1]) * Decimal(FIXED_SIZE_SCALE)),
+        }
+
+    def _handle_depth_update(self, data: dict, write_message: Callable[[MBP10], None]) -> None:
+        if not self.snapshot_fetched:
+            self._fetch_snapshot()
+
+        if data["u"] <= self.snapshot_last_update_id:
+            return
+
+        self.last_sequence_number = data["u"]
+        bid_depth = self._update_orders([self._to_fixed(l) for l in data["b"]], self.bids)
+        ask_depth = self._update_orders([self._to_fixed(l) for l in data["a"]], self.asks)
+        min_depth = min(bid_depth, ask_depth)
+
+        if min_depth >= self.MAX_LEVELS:
+            return
+
+        write_message(MBP10(
+            exchange_id=self.listing_info.exchange_id,
+            security_id=self.listing_info.security_id,
+            timestamp_event=data["E"] * 1_000_000,
+            sequence=self.last_sequence_number,
+            timestamp_sent=None,
+            timestamp_recv=time.time_ns(),
+            price=self.last_trade_price,
+            size=self.last_trade_size,
+            action="Modify",
+            side="None",
+            flags=["marketByPrice"],
+            depth=min_depth,
+            levels=self._get_levels(),
+        ))
+
+    def _handle_trade(self, data: dict, write_message: Callable[[MBP10], None]) -> None:
+        self.last_trade_price = int(Decimal(data["p"]) * Decimal(FIXED_PRICE_SCALE))
+        self.last_trade_size = int(Decimal(data["q"]) * Decimal(FIXED_SIZE_SCALE))
+        side = "Ask" if data["m"] else "Bid"
+
+        write_message(MBP10(
+            exchange_id=self.listing_info.exchange_id,
+            security_id=self.listing_info.security_id,
+            timestamp_event=data["T"] * 1_000_000,
+            sequence=self.last_sequence_number,
+            timestamp_sent=None,
+            timestamp_recv=time.time_ns(),
+            price=self.last_trade_price,
+            size=self.last_trade_size,
+            action="Trade",
+            side=side,
+            flags=["marketByPrice"],
+            depth=None,
+            levels=self._get_levels(),
+        ))
+
+    def _get_levels(self) -> list[BidAskPair]:
+        levels = []
+        for i in range(self.MAX_LEVELS):
+            if i < len(self.bids) and i < len(self.asks):
+                levels.append(BidAskPair(
+                    bid_px=self.bids[i]["price"],
+                    ask_px=self.asks[i]["price"],
+                    bid_sz=self.bids[i]["size"],
+                    ask_sz=self.asks[i]["size"],
+                    bid_ct=1,
+                    ask_ct=1,
+                ))
+            else:
+                levels.append(BidAskPair(None, None, None, None, None, None))
+        return levels
+
+    def _update_orders(self, new_orders: list[dict], book: SortedList) -> int:
+        depth = 99
+        for new_order in new_orders:
+            is_new = True
+            for i in range(len(book)):
+                if book[i]["price"] == new_order["price"]:
+                    is_new = False
+                    depth = min(depth, i)
+                    if new_order["size"] == 0:
+                        book.remove(book[i])
+                    else:
+                        book[i]["size"] = new_order["size"]
+                    break
+            if is_new and new_order["size"] > 0:
+                book.add(new_order)
+                depth = min(depth, book.index(new_order))
+        return depth
+
+
 def create_parser(listing_info: ListingInfo) -> ExchangeParser:
     """
     Factory function to create the appropriate parser for an exchange.
@@ -333,6 +470,8 @@ def create_parser(listing_info: ListingInfo) -> ExchangeParser:
         return HyperliquidParser(listing_info)
     elif exchange_name == "LIGHTER":
         return LighterParser(listing_info)
+    elif exchange_name == "BINANCE":
+        return BinanceParser(listing_info)
     else:
         raise ValueError(f"Unsupported exchange: {exchange_name}")
 

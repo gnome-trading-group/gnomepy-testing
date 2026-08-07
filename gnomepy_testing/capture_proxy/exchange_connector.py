@@ -193,6 +193,29 @@ class LighterConnector(ExchangeConnector):
         ]
 
 
+class BinanceConnector(ExchangeConnector):
+    """Binance WebSocket connector (JSON over WebSocket)."""
+
+    def get_transport_type(self) -> TransportType:
+        return TransportType.WEBSOCKET
+
+    def get_protocol_type(self) -> ProtocolType:
+        return ProtocolType.JSON_WS
+
+    def get_connection_url(self) -> str:
+        return "wss://stream.binance.com:9443/ws"
+
+    def get_subscribe_messages(self) -> list[dict] | None:
+        symbol = self.listing_info.exchange_security_symbol.lower()
+        return [
+            {
+                "method": "SUBSCRIBE",
+                "params": [f"{symbol}@depth@100ms", f"{symbol}@trade"],
+                "id": 1,
+            }
+        ]
+
+
 class ExampleFixExchangeConnector(ExchangeConnector):
     """
     Example connector for an exchange using FIX protocol over TCP.
@@ -243,6 +266,8 @@ def create_exchange_connector(
         return HyperliquidConnector(listing_info, on_message)
     elif exchange_name == "LIGHTER":
         return LighterConnector(listing_info, on_message)
+    elif exchange_name == "BINANCE":
+        return BinanceConnector(listing_info, on_message)
     else:
         raise ValueError(f"Unsupported exchange: {exchange_name}")
 

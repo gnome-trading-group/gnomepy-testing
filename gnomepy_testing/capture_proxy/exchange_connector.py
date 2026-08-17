@@ -9,6 +9,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Callable, Any
 
+POLYMARKET_PING_INTERVAL_SECONDS = 10
+
 from gnomepy_testing.listing_resolver import ListingInfo
 from gnomepy_testing.network import (
     Transport,
@@ -216,6 +218,75 @@ class BinanceConnector(ExchangeConnector):
         ]
 
 
+class PolymarketConnector(ExchangeConnector):
+    """Polymarket WebSocket connector (JSON over WebSocket) with PING/PONG keepalive."""
+
+    def get_transport_type(self) -> TransportType:
+        return TransportType.WEBSOCKET
+
+    def get_protocol_type(self) -> ProtocolType:
+        return ProtocolType.JSON_WS
+
+    def get_connection_url(self) -> str:
+        return "wss://ws-subscriptions-clob.polymarket.com/ws/market"
+
+    def get_subscribe_messages(self) -> list[dict] | None:
+        exchange_security_id = self.listing_info.exchange_security_id
+        token_id = exchange_security_id.split(":", 1)[1] if ":" in exchange_security_id else exchange_security_id
+        return [
+            {
+                "type": "market",
+                "assets_ids": [token_id],
+                "custom_feature_enabled": True,
+            }
+        ]
+
+    async def connect(self):
+        url = self.get_connection_url()
+        logger.info(f"Connecting to {self.listing_info.exchange_name} at {url}")
+        await self.transport.connect(url)
+        self._running = True
+
+        subscribe_msgs = self.get_subscribe_messages()
+        if subscribe_msgs:
+            for msg in subscribe_msgs:
+                encoded = self.protocol.encode_message(msg)
+                logger.info(f"Sending subscription message: {msg}")
+                await self.transport.send(encoded)
+            logger.info(f"Subscribed to {self.listing_info} ({len(subscribe_msgs)} message(s))")
+
+        ping_task = asyncio.ensure_future(self._ping_loop())
+        try:
+            await self._receive_loop()
+        finally:
+            ping_task.cancel()
+
+    async def _ping_loop(self):
+        while self._running:
+            await asyncio.sleep(POLYMARKET_PING_INTERVAL_SECONDS)
+            if self._running and self.transport.is_connected():
+                await self.transport.send("PING")
+
+    async def _receive_loop(self):
+        try:
+            async for raw_data in self.transport.receive():
+                if not self._running:
+                    break
+                if raw_data == "PONG":
+                    continue
+                try:
+                    decoded_data = self.protocol.decode_message(raw_data)
+                    self.on_message(decoded_data)
+                except Exception as e:
+                    logger.error(f"Error decoding message: {e}")
+        except asyncio.CancelledError:
+            logger.info(f"Receive loop cancelled for {self.listing_info.exchange_name}")
+        except Exception as e:
+            logger.error(f"Error in receive loop: {e}")
+        finally:
+            self._running = False
+
+
 class ExampleFixExchangeConnector(ExchangeConnector):
     """
     Example connector for an exchange using FIX protocol over TCP.
@@ -268,6 +339,8 @@ def create_exchange_connector(
         return LighterConnector(listing_info, on_message)
     elif exchange_name == "BINANCE":
         return BinanceConnector(listing_info, on_message)
+    elif exchange_name == "POLYMARKET":
+        return PolymarketConnector(listing_info, on_message)
     else:
         raise ValueError(f"Unsupported exchange: {exchange_name}")
 

@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from gnomepy import DataStore, MBP10, MBP1, SchemaType
+from gnomepy import DataStore, SchemaType
 
 
 class ComparisonResult:
@@ -70,23 +70,14 @@ def compare_messages(python_msg: Any, java_msg: Any, message_num: int,
                           python_msg, java_msg)
         return
 
-    has_mismatch = False
-    for field_name in dir(python_msg):
-        if field_name.startswith('_'):
-            continue
+    python_dict = python_msg.to_dict()
+    java_dict = java_msg.to_dict()
+
+    for field_name, python_val in python_dict.items():
         if field_name in ignore_fields:
             continue
-        if isinstance(getattr(type(python_msg), field_name, None), property):
-            continue
-        if callable(getattr(python_msg, field_name)):
-            continue
-
-        python_val = getattr(python_msg, field_name)
-        java_val = getattr(java_msg, field_name)
-
+        java_val = java_dict.get(field_name)
         if python_val != java_val:
-            if not has_mismatch:
-                has_mismatch = True
             result.add_mismatch(message_num, field_name, python_val, java_val,
                               python_msg, java_msg)
 
@@ -160,19 +151,7 @@ def compare_files(python_file: Path, java_file: Path,
 
 def _get_message_context(msg: Any, ignore_fields: set[str]) -> dict[str, Any]:
     """Extract key identifying fields from a message for context."""
-    context = {}
-    for field_name in dir(msg):
-        if field_name.startswith('_'):
-            continue
-        if field_name in ignore_fields:
-            continue
-        if isinstance(getattr(type(msg), field_name, None), property):
-            continue
-        if callable(getattr(msg, field_name)):
-            continue
-        context[field_name] = getattr(msg, field_name)
-
-    return context
+    return {k: v for k, v in msg.to_dict().items() if k not in ignore_fields}
 
 
 def print_results(result: ComparisonResult, ignore_fields: set[str]):

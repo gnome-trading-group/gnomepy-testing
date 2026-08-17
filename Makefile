@@ -1,4 +1,4 @@
-.PHONY: help install build test-proxy test-client clean docker-build docker-test docker-clean
+.PHONY: help install build test-proxy test-client clean docker-build docker-test docker-clean build-for-docker
 
 help:
 	@echo "Market Data Testing Framework (Capture Proxy Architecture)"
@@ -10,6 +10,7 @@ help:
 	@echo "  make test-client          - Run Python client (requires proxy running)"
 	@echo "  make docker-build         - Build Docker image"
 	@echo "  make docker-test          - Run test in Docker"
+	@echo "  make build-for-docker     - Build gnome-orchestrator for Linux, copy .m2 (run before docker-build)"
 	@echo "  make check-maven-updates  - Check for gnome-orchestrator updates"
 	@echo "  make update-maven-deps    - Update gnome-orchestrator to latest version"
 	@echo "  make clean                - Clean output files"
@@ -26,6 +27,27 @@ install:
 	poetry install
 
 build: docker-build
+
+# Docker build workflow (run these in order when gnome-orchestrator source has changed):
+#   1. mvn install          (in gnome-orchestrator — builds on macOS as usual)
+#   2. make build-for-docker (here — rebuilds inside Linux so the fat JAR contains libNativeSockets.so)
+#   3. make docker-build    (here — builds the test image using the Linux .m2)
+#
+# Why: mvn install on macOS produces a fat JAR with libNativeSockets.dylib. The Docker
+# container runs Linux and needs libNativeSockets.so. build-for-docker re-runs the Maven
+# build inside a Linux container, overwriting the SNAPSHOT in .m2 with the Linux version.
+build-for-docker:
+	@echo "Building gnome-gateways and gnome-orchestrator for Linux and copying .m2..."
+	@cp -r ~/.m2 .m2
+	@cp ../gnome-orchestrator/settings.xml .m2/settings.xml
+	docker run --rm \
+		--env-file .env \
+		-v $(abspath .m2):/root/.m2 \
+		-v $(abspath ../gnome-gateways):/gateways \
+		-v $(abspath ../gnome-orchestrator):/workspace \
+		maven:3.9-eclipse-temurin-21 \
+		sh -c "mvn -f /gateways/pom.xml clean install -DskipTests && mvn -f /workspace/pom.xml clean install -DskipTests"
+	@echo "Done. Run 'make docker-build'."
 
 docker-build:
 	docker-compose build
@@ -90,11 +112,14 @@ docker-clean:
 
 # Specific listing tests
 test-hyperliquid:
-	@$(MAKE) test-proxy LISTING_ID=1 DURATION=60
+	@$(MAKE) test-proxy LISTING_ID=6 DURATION=60
 
 test-binance:
 	@$(MAKE) test-proxy LISTING_ID=2 DURATION=30
 
 test-coinbase:
 	@$(MAKE) test-proxy LISTING_ID=3 DURATION=30
+
+test-polymarket:
+	@$(MAKE) test-proxy LISTING_ID=16307 DURATION=30
 

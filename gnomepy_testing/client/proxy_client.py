@@ -13,7 +13,7 @@ import json
 import logging
 from pathlib import Path
 
-from gnomepy import SchemaBase
+from gnomepy.java.schemas import Schema
 
 from gnomepy_testing.output import BinaryOutputHandler
 from gnomepy_testing.listing_resolver import  resolve_listing
@@ -132,7 +132,7 @@ class ProxyClient:
         logger.info(f"Received metadata from proxy: {metadata}")
         logger.info(f"Using parser: {self.parser.__class__.__name__}")
 
-    def _write_schema_object(self, schema_obj: SchemaBase):
+    def _write_schema_object(self, schema_obj: Schema):
         """Write a schema object to the output file."""
         if self.output_handler:
             self.output_handler.write(schema_obj)

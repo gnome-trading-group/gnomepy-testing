@@ -6,7 +6,7 @@ information needed to connect to exchanges and parse market data.
 """
 import logging
 from dataclasses import dataclass
-from gnomepy import RegistryClient
+from gnomepy.registry.api import RegistryClient
 
 
 logger = logging.getLogger(__name__)
@@ -39,15 +39,8 @@ class ListingResolver:
     Resolves listing IDs to complete listing information using the Registry API.
     """
 
-    def __init__(self, api_key: str | None = None):
-        """
-        Initialize the listing resolver.
-
-        Args:
-            api_key: Optional API key for the Registry. If not provided,
-                    will look for GNOME_REGISTRY_API_KEY environment variable.
-        """
-        self.registry = RegistryClient(api_key=api_key)
+    def __init__(self):
+        self.registry = RegistryClient()
     
     def resolve(self, listing_id: int) -> ListingInfo:
         """
@@ -125,33 +118,13 @@ class ListingResolver:
 _resolver: ListingResolver | None = None
 
 
-def get_resolver(api_key: str | None = None) -> ListingResolver:
-    """
-    Get or create the global ListingResolver instance.
-
-    Args:
-        api_key: Optional API key. Only used on first call.
-
-    Returns:
-        ListingResolver instance
-    """
+def get_resolver() -> ListingResolver:
     global _resolver
     if _resolver is None:
-        _resolver = ListingResolver(api_key=api_key)
+        _resolver = ListingResolver()
     return _resolver
 
 
-def resolve_listing(listing_id: int, api_key: str | None = None) -> ListingInfo:
-    """
-    Convenience function to resolve a listing ID.
-
-    Args:
-        listing_id: The listing ID to resolve
-        api_key: Optional API key
-
-    Returns:
-        ListingInfo with all metadata
-    """
-    resolver = get_resolver(api_key=api_key)
-    return resolver.resolve(listing_id)
+def resolve_listing(listing_id: int) -> ListingInfo:
+    return get_resolver().resolve(listing_id)
 

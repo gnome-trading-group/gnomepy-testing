@@ -12,6 +12,8 @@ services:
       - OUTPUT_DIR=/app/output
       - PROXY_PORT=8765
       - STAGE=dev
-      - GNOME_REGISTRY_API_KEY=${GNOME_REGISTRY_API_KEY}
+      - REGISTRY_API_KEY_ID=rb0pbivke8
+      - AWS_PROFILE=dev
     volumes:
       - ./output:/app/output
+      - ~/.aws/:/root/.aws

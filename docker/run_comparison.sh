@@ -22,6 +22,9 @@ echo "Output Directory: $OUTPUT_DIR"
 echo "Proxy Port: $PROXY_PORT"
 echo "=========================================="
 
+# Tell gnomepy's JVM where to find the Java classes (uses gnome-orchestrator JARs in place of gnome-backtest)
+export GNOME_JARS=$(find /app/java/lib -name "*.jar" | tr '\n' ',' | sed 's/,$//')
+
 # Output files
 PYTHON_OUTPUT="$OUTPUT_DIR/python_listing_${LISTING_ID}.bin"
 JAVA_OUTPUT="$OUTPUT_DIR/java_listing_${LISTING_ID}.bin"
@@ -66,7 +69,19 @@ if [ -z "$JAVA_JAR" ]; then
     exit 1
 fi
 echo "Using Java jar: $JAVA_JAR"
-java --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -cp "$JAVA_JAR" group.gnometrading.testing.MarketDataWriterOrchestrator \
+java --add-exports=java.base/jdk.internal.misc=ALL-UNNAMED \
+     --add-exports=java.base/jdk.internal.ref=ALL-UNNAMED \
+     --add-exports=java.base/jdk.internal.util=ALL-UNNAMED \
+     --add-exports=java.base/sun.nio.ch=ALL-UNNAMED \
+     --add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED \
+     --add-exports=jdk.unsupported/sun.misc=ALL-UNNAMED \
+     --add-opens=java.base/java.io=ALL-UNNAMED \
+     --add-opens=java.base/java.lang=ALL-UNNAMED \
+     --add-opens=java.base/java.lang.reflect=ALL-UNNAMED \
+     --add-opens=java.base/java.util=ALL-UNNAMED \
+     --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
+     --add-opens=jdk.compiler/com.sun.tools.javac=ALL-UNNAMED \
+     -cp "$JAVA_JAR" group.gnometrading.testing.MarketDataWriterOrchestrator \
     -Dhost=localhost \
     -Dport="$PROXY_PORT" \
     -Doutput="$JAVA_OUTPUT" \

@@ -58,9 +58,9 @@ class ProtocolHandler(ABC, Generic[I, O]):
 class JsonWebSocketProtocol(ProtocolHandler[dict | str, str]):
     """Protocol handler for JSON over WebSocket."""
 
-    def encode_message(self, message: dict | str) -> str:
-        """Encode a dict as JSON string."""
-        if isinstance(message, dict):
+    def encode_message(self, message: dict | list | str) -> str:
+        """Encode a dict or list as JSON string."""
+        if isinstance(message, (dict, list)):
             return json.dumps(message)
         return message
 

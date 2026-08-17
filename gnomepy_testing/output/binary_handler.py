@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import BinaryIO
 
-from gnomepy import SchemaBase
+from gnomepy.java.schemas import Schema
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class BinaryOutputHandler:
             self.file = open(self.output_path, 'wb')
             logger.info(f"Opened binary output file: {self.output_path}")
     
-    def write(self, schema_obj: SchemaBase):
+    def write(self, schema_obj: Schema):
         """Write a schema object to the output file."""
         if self.file is None:
             self.open()

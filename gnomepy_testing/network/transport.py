@@ -278,7 +278,7 @@ class WebSocketServer(TransportServer):
                 logger.info(f"Client disconnected: {websocket.remote_address}")
 
         logger.info(f"Starting WebSocket server on {host}:{port}")
-        self.server = await serve(connection_handler, host, port)
+        self.server = await serve(connection_handler, host, port, ping_interval=None)
         logger.info(f"WebSocket server started on ws://{host}:{port}")
 
     async def stop(self) -> None:

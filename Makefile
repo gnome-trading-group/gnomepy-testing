@@ -123,3 +123,6 @@ test-coinbase:
 test-polymarket:
 	@$(MAKE) test-proxy LISTING_ID=16307 DURATION=30
 
+test-kalshi:
+	@$(MAKE) test-proxy LISTING_ID=$(or $(LISTING_ID),) DURATION=30
+

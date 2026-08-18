@@ -5,11 +5,20 @@ Supports any combination of transport (WebSocket, TCP, etc.)
 and protocol (JSON, FIX, binary, etc.) through composition.
 """
 import asyncio
+import base64
+import json
 import logging
+import os
+import time
 from abc import ABC, abstractmethod
 from typing import Callable, Any
 
+import boto3
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+
 POLYMARKET_PING_INTERVAL_SECONDS = 10
+KALSHI_WS_PATH = "/trade-api/ws/v2"
 
 from gnomepy_testing.listing_resolver import ListingInfo
 from gnomepy_testing.network import (
@@ -85,18 +94,27 @@ class ExchangeConnector(ABC):
     def get_subscribe_messages(self) -> list[Any] | None:
         """
         Get the subscription messages for this exchange.
-        
+
         Returns:
             List of subscription messages (format depends on protocol), or None
         """
         pass
+
+    def get_connection_headers(self) -> dict[str, str] | None:
+        """
+        Get extra HTTP headers to send during the WebSocket handshake.
+
+        Returns:
+            Dict of header name → value, or None
+        """
+        return None
 
     async def connect(self):
         """Connect to the exchange."""
         url = self.get_connection_url()
         logger.info(f"Connecting to {self.listing_info.exchange_name} at {url}")
 
-        await self.transport.connect(url)
+        await self.transport.connect(url, extra_headers=self.get_connection_headers())
         self._running = True
 
         subscribe_msgs = self.get_subscribe_messages()
@@ -287,6 +305,72 @@ class PolymarketConnector(ExchangeConnector):
             self._running = False
 
 
+class KalshiConnector(ExchangeConnector):
+    """Kalshi WebSocket connector with RSA-PSS authentication."""
+
+    def get_transport_type(self) -> TransportType:
+        return TransportType.WEBSOCKET
+
+    def get_protocol_type(self) -> ProtocolType:
+        return ProtocolType.JSON_WS
+
+    def get_connection_url(self) -> str:
+        return "wss://external-api-ws.kalshi.com" + KALSHI_WS_PATH
+
+    def _load_credentials(self):
+        api_key = os.environ.get("KALSHI_API_KEY")
+        key_path = os.environ.get("KALSHI_PRIVATE_KEY_PATH")
+        if api_key and key_path:
+            with open(key_path, "rb") as f:
+                private_key = serialization.load_pem_private_key(f.read(), password=None)
+            return api_key, private_key
+
+        try:
+            secret = boto3.client("secretsmanager").get_secret_value(
+                SecretId="gnome/exchange-credentials/kalshi"
+            )
+            data = json.loads(secret["SecretString"])
+            private_key = serialization.load_pem_private_key(
+                data["privateKey"].encode(), password=None
+            )
+            return data["apiKey"], private_key
+        except Exception as e:
+            raise RuntimeError(
+                "Kalshi credentials not found. Set KALSHI_API_KEY and KALSHI_PRIVATE_KEY_PATH "
+                "env vars, or configure AWS credentials for Secrets Manager access."
+            ) from e
+
+    def get_connection_headers(self) -> dict[str, str]:
+        api_key, private_key = self._load_credentials()
+
+        timestamp_ms = str(int(time.time() * 1000))
+        payload = f"{timestamp_ms}GET{KALSHI_WS_PATH}".encode()
+        signature = private_key.sign(
+            payload,
+            padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=32),
+            hashes.SHA256(),
+        )
+        return {
+            "KALSHI-ACCESS-KEY": api_key,
+            "KALSHI-ACCESS-TIMESTAMP": timestamp_ms,
+            "KALSHI-ACCESS-SIGNATURE": base64.b64encode(signature).decode(),
+        }
+
+    def get_subscribe_messages(self) -> list[dict] | None:
+        exchange_security_id = self.listing_info.exchange_security_id or ""
+        ticker = exchange_security_id.split(":", 1)[0] if ":" in exchange_security_id else exchange_security_id
+        return [
+            {
+                "id": 1,
+                "cmd": "subscribe",
+                "params": {
+                    "channels": ["orderbook_delta", "trade"],
+                    "market_tickers": [ticker],
+                },
+            }
+        ]
+
+
 class ExampleFixExchangeConnector(ExchangeConnector):
     """
     Example connector for an exchange using FIX protocol over TCP.
@@ -341,6 +425,8 @@ def create_exchange_connector(
         return BinanceConnector(listing_info, on_message)
     elif exchange_name == "POLYMARKET":
         return PolymarketConnector(listing_info, on_message)
+    elif exchange_name == "KALSHI":
+        return KalshiConnector(listing_info, on_message)
     else:
         raise ValueError(f"Unsupported exchange: {exchange_name}")
 

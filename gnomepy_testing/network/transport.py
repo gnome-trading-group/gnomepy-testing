@@ -76,10 +76,10 @@ class WebSocketTransport(Transport[str | bytes]):
     def __init__(self):
         self.ws: WebSocketClientProtocol | None = None
 
-    async def connect(self, url: str) -> None:
+    async def connect(self, url: str, extra_headers: dict[str, str] | None = None) -> None:
         """Connect to WebSocket URL."""
         logger.info(f"Connecting to WebSocket: {url}")
-        self.ws = await websockets.connect(url)
+        self.ws = await websockets.connect(url, additional_headers=extra_headers or {})
         logger.info(f"WebSocket connected: {url}")
 
     async def send(self, data: str | bytes) -> None:

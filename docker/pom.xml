@@ -20,7 +20,7 @@
         <dependency>
             <groupId>group.gnometrading</groupId>
             <artifactId>gnome-orchestrator</artifactId>
-            <version>1.4.4-SNAPSHOT</version>
+            <version>1.5.2-SNAPSHOT</version>
         </dependency>
     </dependencies>
 

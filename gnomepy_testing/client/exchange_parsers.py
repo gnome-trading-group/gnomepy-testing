@@ -585,6 +585,147 @@ class PolymarketParser(ExchangeParser):
         ))
 
 
+class KalshiParser(ExchangeParser):
+    """Parser for Kalshi orderbook and trade messages."""
+
+    MAX_LEVELS = 10
+    # Kalshi prices are cent-based (1–99 cents). Index 0 and 100 unused.
+    _PRICE_ARRAY_SIZE = 100
+    # Converts integer cents to fixed-point price: cents * (PRICE_SCALE / 100)
+    _CENTS_TO_PRICE = _PRICE_SCALE // 100
+    # Qty strings have 2 decimal places (cent-dollar precision). Store as cent-dollars
+    # (multiply by 100) so $0.01 orders are not truncated to zero.
+    # Divide by 100 on output to keep the same schema scale as other exchanges.
+    _CENT_DOLLAR_TO_SIZE = _SIZE_SCALE // 100
+
+    def __init__(self, listing_info: ListingInfo):
+        super().__init__(listing_info)
+        self.yes_qty = [0] * self._PRICE_ARRAY_SIZE
+        self.no_qty = [0] * self._PRICE_ARRAY_SIZE
+        self.last_seq = None
+
+    def get_transport_type(self) -> TransportType:
+        return TransportType.WEBSOCKET
+
+    def get_protocol_type(self) -> ProtocolType:
+        return ProtocolType.JSON_WS
+
+    def parse(self, data: dict, write_message: Callable[[Mbp10Schema], None]) -> None:
+        msg_type = data.get("type")
+        self.last_seq = data.get("seq")
+        msg = data.get("msg", {})
+        if msg_type == "orderbook_snapshot":
+            self._handle_snapshot(msg, write_message)
+        elif msg_type == "orderbook_delta":
+            self._handle_delta(msg, write_message)
+        elif msg_type == "trade":
+            self._handle_trade(msg, write_message)
+
+    def _handle_snapshot(self, msg: dict, write_message: Callable[[Mbp10Schema], None]) -> None:
+        self.yes_qty = [0] * self._PRICE_ARRAY_SIZE
+        self.no_qty = [0] * self._PRICE_ARRAY_SIZE
+        for price_str, qty_str in msg.get("yes_dollars_fp", []):
+            cents = int(Decimal(price_str) * 100)
+            if 0 < cents < self._PRICE_ARRAY_SIZE:
+                self.yes_qty[cents] = int(Decimal(qty_str) * 100)
+        for price_str, qty_str in msg.get("no_dollars_fp", []):
+            cents = int(Decimal(price_str) * 100)
+            if 0 < cents < self._PRICE_ARRAY_SIZE:
+                self.no_qty[cents] = int(Decimal(qty_str) * 100)
+        write_message(Mbp10Schema(
+            exchange_id=self.listing_info.exchange_id,
+            security_id=self.listing_info.security_id,
+            timestamp_event=None,
+            sequence=self.last_seq,
+            timestamp_sent=None,
+            timestamp_recv=time.time_ns(),
+            price=None,
+            size=None,
+            action="Modify",
+            side="None",
+            flags=["marketByPrice"],
+            depth=None,
+            **self._get_levels(),
+        ))
+
+    def _handle_delta(self, msg: dict, write_message: Callable[[Mbp10Schema], None]) -> None:
+        cents = int(Decimal(msg["price_dollars"]) * 100)
+        delta = int(Decimal(msg["delta_fp"]) * 100)
+        side = msg.get("side", "")
+        ts_ms = msg.get("ts_ms")
+        timestamp_event = ts_ms * 1_000_000 if ts_ms is not None else None
+
+        if 0 < cents < self._PRICE_ARRAY_SIZE:
+            if side == "yes":
+                self.yes_qty[cents] = max(0, self.yes_qty[cents] + delta)
+            elif side == "no":
+                self.no_qty[cents] = max(0, self.no_qty[cents] + delta)
+
+        write_message(Mbp10Schema(
+            exchange_id=self.listing_info.exchange_id,
+            security_id=self.listing_info.security_id,
+            timestamp_event=timestamp_event,
+            sequence=self.last_seq,
+            timestamp_sent=None,
+            timestamp_recv=time.time_ns(),
+            price=None,
+            size=None,
+            action="Modify",
+            side="None",
+            flags=["marketByPrice"],
+            depth=None,
+            **self._get_levels(),
+        ))
+
+    def _handle_trade(self, msg: dict, write_message: Callable[[Mbp10Schema], None]) -> None:
+        trade_price = int(Decimal(msg["yes_price_dollars"]) * Decimal(_PRICE_SCALE))
+        trade_size = int(Decimal(msg["count_fp"]) * Decimal(_SIZE_SCALE))
+        taker_book_side = msg.get("taker_book_side", "")
+        side = "Bid" if taker_book_side == "bid" else "Ask"
+        ts_ms = msg.get("ts_ms")
+        timestamp_event = ts_ms * 1_000_000 if ts_ms is not None else None
+
+        write_message(Mbp10Schema(
+            exchange_id=self.listing_info.exchange_id,
+            security_id=self.listing_info.security_id,
+            timestamp_event=timestamp_event,
+            sequence=self.last_seq,
+            timestamp_sent=None,
+            timestamp_recv=time.time_ns(),
+            price=trade_price,
+            size=trade_size,
+            action="Trade",
+            side=side,
+            flags=["marketByPrice"],
+            depth=None,
+            **self._get_levels(),
+        ))
+
+    def _get_levels(self) -> dict:
+        kwargs = {}
+        bid_idx = 0
+        for p in range(self._PRICE_ARRAY_SIZE - 1, 0, -1):
+            if bid_idx >= self.MAX_LEVELS:
+                break
+            if self.yes_qty[p] > 0:
+                kwargs[f"bid_price_{bid_idx}"] = p * self._CENTS_TO_PRICE
+                kwargs[f"bid_size_{bid_idx}"] = self.yes_qty[p] * self._CENT_DOLLAR_TO_SIZE
+                kwargs[f"bid_count_{bid_idx}"] = 1
+                bid_idx += 1
+        ask_idx = 0
+        for p in range(self._PRICE_ARRAY_SIZE - 1, 0, -1):
+            if ask_idx >= self.MAX_LEVELS:
+                break
+            if self.no_qty[p] > 0:
+                # NO bid at p cents → YES ask at (100 - p) cents
+                ask_price_cents = self._PRICE_ARRAY_SIZE - p
+                kwargs[f"ask_price_{ask_idx}"] = ask_price_cents * self._CENTS_TO_PRICE
+                kwargs[f"ask_size_{ask_idx}"] = self.no_qty[p] * self._CENT_DOLLAR_TO_SIZE
+                kwargs[f"ask_count_{ask_idx}"] = 1
+                ask_idx += 1
+        return kwargs
+
+
 def create_parser(listing_info: ListingInfo) -> ExchangeParser:
     """
     Factory function to create the appropriate parser for an exchange.
@@ -605,6 +746,8 @@ def create_parser(listing_info: ListingInfo) -> ExchangeParser:
         return BinanceParser(listing_info)
     elif exchange_name == "POLYMARKET":
         return PolymarketParser(listing_info)
+    elif exchange_name == "KALSHI":
+        return KalshiParser(listing_info)
     else:
         raise ValueError(f"Unsupported exchange: {exchange_name}")
 

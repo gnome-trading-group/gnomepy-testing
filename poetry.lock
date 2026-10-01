@@ -362,26 +362,28 @@ test-randomorder = ["pytest-randomly"]
 
 [[package]]
 name = "gnomepy"
-version = "2.6.5"
+version = "2.19.0"
 description = ""
 optional = false
 python-versions = "<3.14,>=3.13"
 groups = ["main"]
 files = [
-    {file = "gnomepy-2.6.5-py3-none-any.whl", hash = "sha256:5eca1994a4d8a945d68cba1a626df67bf5980903969e4aeab93de97add0fe072"},
-    {file = "gnomepy-2.6.5.tar.gz", hash = "sha256:e69aafccec778d64a2e0c36e2c9a7cdb2446715cc9ca2b93d16d1f4b80db1e1e"},
+    {file = "gnomepy-2.19.0-py3-none-any.whl", hash = "sha256:f511c04149b3624a972a5dda0ed05262ff63381b9b1ab870f83149caa55a2766"},
+    {file = "gnomepy-2.19.0.tar.gz", hash = "sha256:627e96198a23ff6681f6e58f81c2129911c8eb98cc81c62ba1ac8155e25d7eea"},
 ]
 
 [package.dependencies]
 boto3 = ">=1.36.18,<2.0.0"
 click = ">=8.1,<9.0"
+jpype1 = ">=1.5.0,<2.0.0"
 pytz = ">=2025.1,<2026.0"
 pyyaml = ">=6.0,<7.0"
 requests = ">=2.32.3,<3.0.0"
 zstandard = ">=0.23.0,<0.24.0"
 
 [package.extras]
-backtest = ["anthropic (>=0.40.0,<1.0.0)", "boto3-stubs (>=1.42.73,<1.43.0)", "dash (>=2.18.0,<3.0.0)", "dash-bootstrap-components (>=1.6.0,<2.0.0)", "jpype1 (>=1.5.0,<2.0.0)", "numpy (>=2.2.4,<3.0.0)", "pandas (>=2.2.3,<3.0.0)", "pandas-stubs (>=2.3.3,<2.4.0)", "plotly (>=6.6.0,<6.7.0)", "pyarrow (>=23.0.1,<24.0.0)"]
+backtest = ["anthropic (>=0.40.0,<1.0.0)", "boto3-stubs (>=1.42.73,<2.0.0)", "dash (>=2.18.0,<3.0.0)", "dash-bootstrap-components (>=1.6.0,<2.0.0)", "numpy (>=2.2.4,<3.0.0)", "pandas (>=2.2.3,<3.0.0)", "pandas-stubs (>=2.3.3,<2.4.0)", "plotly (>=6.6.0,<6.7.0)", "pyarrow (>=23.0.1,<24.0.0)", "scipy (>=1.15.0,<2.0.0)"]
+strategy = ["numpy (>=2.2.4,<3.0.0)", "scipy (>=1.15.0,<2.0.0)"]
 tardis = ["tardis-dev (>=4.0.0,<5.0.0)"]
 
 [[package]]
@@ -1185,4 +1187,4 @@ cffi = ["cffi (>=1.11)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "7260f57b2fbb4183c2a412550178cc5dfb7012f27512d9dfdb9c815af68aab9a"
+content-hash = "c328e70ad4a1099fbec477c24f2a087b33514964a5d7494df3e633ccef5f281b"

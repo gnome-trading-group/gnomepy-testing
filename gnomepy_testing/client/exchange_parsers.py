@@ -736,18 +736,18 @@ def create_parser(listing_info: ListingInfo) -> ExchangeParser:
     Returns:
         ExchangeParser instance for the exchange
     """
-    exchange_name = listing_info.exchange_name.upper()
+    exchange_code = listing_info.exchange_code
     
-    if exchange_name == "HYPERLIQUID":
+    if exchange_code == "HYPERLIQUID":
         return HyperliquidParser(listing_info)
-    elif exchange_name == "LIGHTER":
+    elif exchange_code == "LIGHTER":
         return LighterParser(listing_info)
-    elif exchange_name == "BINANCE":
+    elif exchange_code == "BINANCE":
         return BinanceParser(listing_info)
-    elif exchange_name == "POLYMARKET":
+    elif exchange_code == "POLYMARKET_INTL":
         return PolymarketParser(listing_info)
-    elif exchange_name == "KALSHI":
+    elif exchange_code == "KALSHI":
         return KalshiParser(listing_info)
     else:
-        raise ValueError(f"Unsupported exchange: {exchange_name}")
+        raise ValueError(f"Unsupported exchange code: {exchange_code}")
 

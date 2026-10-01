@@ -24,6 +24,7 @@ class ListingInfo:
     """
     listing_id: int
     exchange_id: int
+    exchange_code: str
     exchange_name: str
     security_id: int
     security_symbol: str
@@ -79,10 +80,10 @@ class ListingResolver:
                 raise ValueError(f"Exchange ID {exchange_id} not found in registry")
 
             exchange_data = exchange_results[0]
-            exchange_name = exchange_data.exchange_name
+            exchange_code = exchange_data.exchange_code
 
-            if not exchange_name:
-                raise ValueError(f"Exchange name not found for ID {exchange_id}")
+            if not exchange_code:
+                raise ValueError(f"Exchange code not found for ID {exchange_id}")
 
             security_results = self.registry.get_security(security_id=security_id)
             if not security_results or len(security_results) == 0:
@@ -97,7 +98,8 @@ class ListingResolver:
             listing_info = ListingInfo(
                 listing_id=listing_id,
                 exchange_id=exchange_id,
-                exchange_name=exchange_name.upper(),
+                exchange_code=exchange_code,
+                exchange_name=exchange_data.exchange_name,
                 security_id=security_id,
                 security_symbol=security_symbol,
                 exchange_security_id=exchange_security_id,

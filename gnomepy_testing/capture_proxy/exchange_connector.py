@@ -415,18 +415,18 @@ def create_exchange_connector(
     Returns:
         ExchangeConnector instance for the specified exchange
     """
-    exchange_name = listing_info.exchange_name.upper()
+    exchange_code = listing_info.exchange_code
 
-    if exchange_name == "HYPERLIQUID":
+    if exchange_code == "HYPERLIQUID":
         return HyperliquidConnector(listing_info, on_message)
-    elif exchange_name == "LIGHTER":
+    elif exchange_code == "LIGHTER":
         return LighterConnector(listing_info, on_message)
-    elif exchange_name == "BINANCE":
+    elif exchange_code == "BINANCE":
         return BinanceConnector(listing_info, on_message)
-    elif exchange_name == "POLYMARKET":
+    elif exchange_code == "POLYMARKET_INTL":
         return PolymarketConnector(listing_info, on_message)
-    elif exchange_name == "KALSHI":
+    elif exchange_code == "KALSHI":
         return KalshiConnector(listing_info, on_message)
     else:
-        raise ValueError(f"Unsupported exchange: {exchange_name}")
+        raise ValueError(f"Unsupported exchange code: {exchange_code}")
 

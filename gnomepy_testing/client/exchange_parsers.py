@@ -461,7 +461,7 @@ class BinanceParser(ExchangeParser):
         return depth
 
 
-class PolymarketParser(ExchangeParser):
+class PolymarketIntlParser(ExchangeParser):
     """Parser for Polymarket WebSocket messages."""
 
     MAX_LEVELS = 10
@@ -727,7 +727,7 @@ def create_parser(listing_info: ListingInfo) -> ExchangeParser:
     elif exchange_code == "BINANCE":
         return BinanceParser(listing_info)
     elif exchange_code == "POLYMARKET_INTL":
-        return PolymarketParser(listing_info)
+        return PolymarketIntlParser(listing_info)
     elif exchange_code == "KALSHI":
         return KalshiParser(listing_info)
     else:

@@ -236,7 +236,7 @@ class BinanceConnector(ExchangeConnector):
         ]
 
 
-class PolymarketConnector(ExchangeConnector):
+class PolymarketIntlConnector(ExchangeConnector):
     """Polymarket WebSocket connector (JSON over WebSocket) with PING/PONG keepalive."""
 
     def get_transport_type(self) -> TransportType:
@@ -424,7 +424,7 @@ def create_exchange_connector(
     elif exchange_code == "BINANCE":
         return BinanceConnector(listing_info, on_message)
     elif exchange_code == "POLYMARKET_INTL":
-        return PolymarketConnector(listing_info, on_message)
+        return PolymarketIntlConnector(listing_info, on_message)
     elif exchange_code == "KALSHI":
         return KalshiConnector(listing_info, on_message)
     else:

@@ -6,10 +6,10 @@ following price_change events (to cover the race window while the REST call is
 in flight), then compares the locally-maintained book against the CLOB REST API.
 
 Usage:
-    poetry run python tests/validate_polymarket_book.py <listing_id>
+    poetry run python tests/validate_polymarket_intl_book.py <listing_id>
 
 Examples:
-    poetry run python tests/validate_polymarket_book.py 74712
+    poetry run python tests/validate_polymarket_intl_book.py 74712
 """
 import argparse
 import asyncio

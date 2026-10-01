@@ -602,7 +602,6 @@ class KalshiParser(ExchangeParser):
         super().__init__(listing_info)
         self.yes_qty = [0] * self._PRICE_ARRAY_SIZE
         self.no_qty = [0] * self._PRICE_ARRAY_SIZE
-        self.last_seq = None
 
     def get_transport_type(self) -> TransportType:
         return TransportType.WEBSOCKET
@@ -612,7 +611,6 @@ class KalshiParser(ExchangeParser):
 
     def parse(self, data: dict, write_message: Callable[[Mbp10Schema], None]) -> None:
         msg_type = data.get("type")
-        self.last_seq = data.get("seq")
         msg = data.get("msg", {})
         if msg_type == "orderbook_snapshot":
             self._handle_snapshot(msg, write_message)
@@ -632,22 +630,6 @@ class KalshiParser(ExchangeParser):
             cents = int(Decimal(price_str) * 100)
             if 0 < cents < self._PRICE_ARRAY_SIZE:
                 self.no_qty[cents] = int(Decimal(qty_str) * 100)
-        write_message(Mbp10Schema(
-            exchange_id=self.listing_info.exchange_id,
-            security_id=self.listing_info.security_id,
-            timestamp_event=None,
-            sequence=self.last_seq,
-            timestamp_sent=None,
-            timestamp_recv=time.time_ns(),
-            price=None,
-            size=None,
-            action="Modify",
-            side="None",
-            flags=["marketByPrice"],
-            depth=None,
-            **self._get_levels(),
-        ))
-
     def _handle_delta(self, msg: dict, write_message: Callable[[Mbp10Schema], None]) -> None:
         cents = int(Decimal(msg["price_dollars"]) * 100)
         delta = int(Decimal(msg["delta_fp"]) * 100)
@@ -665,7 +647,7 @@ class KalshiParser(ExchangeParser):
             exchange_id=self.listing_info.exchange_id,
             security_id=self.listing_info.security_id,
             timestamp_event=timestamp_event,
-            sequence=self.last_seq,
+            sequence=None,
             timestamp_sent=None,
             timestamp_recv=time.time_ns(),
             price=None,
@@ -689,7 +671,7 @@ class KalshiParser(ExchangeParser):
             exchange_id=self.listing_info.exchange_id,
             security_id=self.listing_info.security_id,
             timestamp_event=timestamp_event,
-            sequence=self.last_seq,
+            sequence=None,
             timestamp_sent=None,
             timestamp_recv=time.time_ns(),
             price=trade_price,

@@ -88,7 +88,7 @@ async def capture_ws_book(ticker, api_key, private_key):
         await ws.send(json.dumps({
             "id": 1,
             "cmd": "subscribe",
-            "params": {"channels": ["orderbook_delta"], "market_tickers": [ticker]},
+            "params": {"channels": ["orderbook_delta"], "market_tickers": [ticker], "use_yes_price": True},
         }))
 
         yes_qty = [0] * PRICE_ARRAY_SIZE
@@ -152,9 +152,11 @@ def parse_rest_book(rest_data):
         cents = int(Decimal(price_str) * 100)
         if 0 < cents < PRICE_ARRAY_SIZE:
             yes[cents] = int(Decimal(qty_str))
+    # REST has no use_yes_price option and reports NO levels in no-leg pricing; convert them to
+    # YES-leg so they line up with the WS subscription.
     no = {}
     for price_str, qty_str in ob.get("no_dollars", []):
-        cents = int(Decimal(price_str) * 100)
+        cents = PRICE_ARRAY_SIZE - int(Decimal(price_str) * 100)
         if 0 < cents < PRICE_ARRAY_SIZE:
             no[cents] = int(Decimal(qty_str))
     return yes, no
@@ -214,8 +216,7 @@ def print_book(ws_yes, ws_no, rest_yes, rest_no):
         ws_q = ws_no[p]
         rest_q = rest_no.get(p, 0)
         ok = "✓" if ws_q == rest_q else "✗"
-        ask_p = PRICE_ARRAY_SIZE - p
-        print(f"{'NO':4} {p:>4}¢  {ws_q:>12,}  {rest_q:>12,}  {ok:>5}  (YES ask = {ask_p}¢)")
+        print(f"{'NO':4} {p:>4}¢  {ws_q:>12,}  {rest_q:>12,}  {ok:>5}  (YES-priced ask)")
         shown += 1
         if shown >= 15:
             remaining = len(all_no) - shown

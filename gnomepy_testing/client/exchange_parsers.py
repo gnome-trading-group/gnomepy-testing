@@ -6,9 +6,11 @@ Each parser also knows which transport and protocol it needs.
 """
 import json
 import logging
+import re
 import time
 import urllib.request
 from abc import ABC, abstractmethod
+from datetime import datetime
 from decimal import Decimal
 from typing import Callable, Any
 
@@ -20,6 +22,7 @@ from gnomepy_testing.network import TransportType, ProtocolType
 
 _PRICE_SCALE = 1_000_000_000
 _SIZE_SCALE = 1_000_000
+_RFC3339_RE = re.compile(r"(\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2})(?:\.(\d+))?([Zz]|[+-]\d{2}:\d{2})")
 
 
 logger = logging.getLogger(__name__)
@@ -695,17 +698,119 @@ class KalshiParser(ExchangeParser):
                 kwargs[f"bid_count_{bid_idx}"] = 1
                 bid_idx += 1
         ask_idx = 0
-        for p in range(self._PRICE_ARRAY_SIZE - 1, 0, -1):
+        # Subscribed with use_yes_price, so NO levels are YES-priced asks; lowest is best.
+        for p in range(1, self._PRICE_ARRAY_SIZE):
             if ask_idx >= self.MAX_LEVELS:
                 break
             if self.no_qty[p] > 0:
-                # NO bid at p cents → YES ask at (100 - p) cents
-                ask_price_cents = self._PRICE_ARRAY_SIZE - p
-                kwargs[f"ask_price_{ask_idx}"] = ask_price_cents * self._CENTS_TO_PRICE
+                kwargs[f"ask_price_{ask_idx}"] = p * self._CENTS_TO_PRICE
                 kwargs[f"ask_size_{ask_idx}"] = self.no_qty[p] * self._CENT_DOLLAR_TO_SIZE
                 kwargs[f"ask_count_{ask_idx}"] = 1
                 ask_idx += 1
         return kwargs
+
+
+class PolymarketUsParser(ExchangeParser):
+    """Parser for Polymarket US market data and trade messages.
+
+    Each marketData message is a full top-of-book snapshot, so the book is rebuilt per message.
+    Prices are long (YES) terms; both :long and :short listings consume the same book.
+    """
+
+    MAX_LEVELS = 10
+    _INTENT_AGGRESSOR = {
+        "ORDER_INTENT_BUY_LONG": "Bid",
+        "ORDER_INTENT_SELL_SHORT": "Bid",
+        "ORDER_INTENT_SELL_LONG": "Ask",
+        "ORDER_INTENT_BUY_SHORT": "Ask",
+    }
+    _ORDER_SIDE_AGGRESSOR = {"ORDER_SIDE_BUY": "Bid", "ORDER_SIDE_SELL": "Ask"}
+
+    def __init__(self, listing_info: ListingInfo):
+        super().__init__(listing_info)
+        self.bids: list[tuple[int, int]] = []
+        self.asks: list[tuple[int, int]] = []
+
+    def get_transport_type(self) -> TransportType:
+        return TransportType.WEBSOCKET
+
+    def get_protocol_type(self) -> ProtocolType:
+        return ProtocolType.JSON_WS
+
+    def parse(self, data: dict, write_message: Callable[[Mbp10Schema], None]) -> None:
+        if "marketData" in data:
+            self._handle_market_data(data["marketData"], write_message)
+        elif "trade" in data:
+            self._handle_trade(data["trade"], write_message)
+
+    def _handle_market_data(self, market_data: dict, write_message: Callable[[Mbp10Schema], None]) -> None:
+        self.bids = self._levels(market_data.get("bids") or [])
+        self.asks = self._levels(market_data.get("offers") or [])
+        self._emit(_rfc3339_to_nanos(market_data.get("transactTime")), "Modify", "None", None, None, write_message)
+
+    def _handle_trade(self, trade: dict, write_message: Callable[[Mbp10Schema], None]) -> None:
+        # The book is priced in long terms, so buying short hits the bids despite its BUY order side.
+        taker = trade.get("taker") or {}
+        side = self._INTENT_AGGRESSOR.get(taker.get("intent")) or self._ORDER_SIDE_AGGRESSOR.get(taker.get("side"), "None")
+        self._emit(
+            _rfc3339_to_nanos(trade.get("tradeTime")),
+            "Trade",
+            side,
+            int(Decimal(trade["price"]["value"]) * _PRICE_SCALE),
+            int(Decimal(trade["quantity"]["value"]) * _SIZE_SCALE),
+            write_message,
+        )
+
+    def _levels(self, raw_levels: list[dict]) -> list[tuple[int, int]]:
+        levels = []
+        for level in raw_levels:
+            size = int(Decimal(level["qty"]) * _SIZE_SCALE)
+            if size > 0:
+                levels.append((int(Decimal(level["px"]["value"]) * _PRICE_SCALE), size))
+        return levels[:self.MAX_LEVELS]
+
+    def _get_levels(self) -> dict:
+        kwargs = {}
+        for i, (price, size) in enumerate(self.bids):
+            kwargs[f"bid_price_{i}"] = price
+            kwargs[f"bid_size_{i}"] = size
+            kwargs[f"bid_count_{i}"] = 1
+        for i, (price, size) in enumerate(self.asks):
+            kwargs[f"ask_price_{i}"] = price
+            kwargs[f"ask_size_{i}"] = size
+            kwargs[f"ask_count_{i}"] = 1
+        return kwargs
+
+    def _emit(self, timestamp_event: int | None, action: str, side: str, price: int | None,
+              size: int | None, write_message: Callable[[Mbp10Schema], None]) -> None:
+        write_message(Mbp10Schema(
+            exchange_id=self.listing_info.exchange_id,
+            security_id=self.listing_info.security_id,
+            timestamp_event=timestamp_event,
+            sequence=None,
+            timestamp_sent=None,
+            timestamp_recv=time.time_ns(),
+            price=price,
+            size=size,
+            action=action,
+            side=side,
+            flags=["marketByPrice"],
+            depth=None,
+            **self._get_levels(),
+        ))
+
+
+def _rfc3339_to_nanos(text: str | None) -> int | None:
+    # datetime only keeps microseconds; Polymarket US timestamps carry nanoseconds.
+    if not text:
+        return None
+    match = _RFC3339_RE.fullmatch(text)
+    if not match:
+        return None
+    base, fraction, zone = match.groups()
+    seconds = int(datetime.fromisoformat(base + ("+00:00" if zone in ("Z", "z") else zone)).timestamp())
+    nanos = int(fraction.ljust(9, "0")[:9]) if fraction else 0
+    return seconds * 1_000_000_000 + nanos
 
 
 def create_parser(listing_info: ListingInfo) -> ExchangeParser:
@@ -728,6 +833,8 @@ def create_parser(listing_info: ListingInfo) -> ExchangeParser:
         return BinanceParser(listing_info)
     elif exchange_code == "POLYMARKET_INTL":
         return PolymarketIntlParser(listing_info)
+    elif exchange_code == "POLYMARKET_US":
+        return PolymarketUsParser(listing_info)
     elif exchange_code == "KALSHI":
         return KalshiParser(listing_info)
     else:

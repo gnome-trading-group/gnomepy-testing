@@ -16,9 +16,11 @@ from typing import Callable, Any
 import boto3
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 POLYMARKET_PING_INTERVAL_SECONDS = 10
 KALSHI_WS_PATH = "/trade-api/ws/v2"
+POLYMARKET_US_WS_PATH = "/v1/ws/markets"
 
 from gnomepy_testing.listing_resolver import ListingInfo
 from gnomepy_testing.network import (
@@ -366,8 +368,60 @@ class KalshiConnector(ExchangeConnector):
                 "params": {
                     "channels": ["orderbook_delta", "trade"],
                     "market_tickers": [ticker],
+                    "use_yes_price": True,
                 },
             }
+        ]
+
+
+class PolymarketUsConnector(ExchangeConnector):
+    """Polymarket US WebSocket connector with Ed25519 authentication."""
+
+    def get_transport_type(self) -> TransportType:
+        return TransportType.WEBSOCKET
+
+    def get_protocol_type(self) -> ProtocolType:
+        return ProtocolType.JSON_WS
+
+    def get_connection_url(self) -> str:
+        return "wss://api.polymarket.us" + POLYMARKET_US_WS_PATH
+
+    def _load_credentials(self) -> tuple[str, str]:
+        api_key = os.environ.get("POLYMARKET_US_API_KEY")
+        secret = os.environ.get("POLYMARKET_US_SECRET")
+        if api_key and secret:
+            return api_key, secret
+
+        try:
+            response = boto3.client("secretsmanager").get_secret_value(
+                SecretId="gnome/exchange-credentials/polymarket-us"
+            )
+            data = json.loads(response["SecretString"])
+            return data["apiKey"], data["secret"]
+        except Exception as e:
+            raise RuntimeError(
+                "Polymarket US credentials not found. Set POLYMARKET_US_API_KEY and POLYMARKET_US_SECRET "
+                "env vars, or configure AWS credentials for Secrets Manager access."
+            ) from e
+
+    def get_connection_headers(self) -> dict[str, str]:
+        api_key, secret = self._load_credentials()
+        # The secret is the 32-byte Ed25519 seed, sometimes followed by the 32-byte public key.
+        private_key = Ed25519PrivateKey.from_private_bytes(base64.b64decode(secret)[:32])
+
+        timestamp_ms = str(int(time.time() * 1000))
+        signature = private_key.sign(f"{timestamp_ms}GET{POLYMARKET_US_WS_PATH}".encode())
+        return {
+            "X-PM-Access-Key": api_key,
+            "X-PM-Timestamp": timestamp_ms,
+            "X-PM-Signature": base64.b64encode(signature).decode(),
+        }
+
+    def get_subscribe_messages(self) -> list[dict] | None:
+        slug = (self.listing_info.exchange_security_id or "").rsplit(":", 1)[0]
+        return [
+            {"subscribe": {"requestId": "md", "subscriptionType": "SUBSCRIPTION_TYPE_MARKET_DATA", "marketSlugs": [slug]}},
+            {"subscribe": {"requestId": "tr", "subscriptionType": "SUBSCRIPTION_TYPE_TRADE", "marketSlugs": [slug]}},
         ]
 
 
@@ -425,6 +479,8 @@ def create_exchange_connector(
         return BinanceConnector(listing_info, on_message)
     elif exchange_code == "POLYMARKET_INTL":
         return PolymarketIntlConnector(listing_info, on_message)
+    elif exchange_code == "POLYMARKET_US":
+        return PolymarketUsConnector(listing_info, on_message)
     elif exchange_code == "KALSHI":
         return KalshiConnector(listing_info, on_message)
     else:

@@ -126,3 +126,6 @@ test-polymarket:
 test-kalshi:
 	@$(MAKE) test-proxy LISTING_ID=$(or $(LISTING_ID),) DURATION=30
 
+test-polymarket-us:
+	@$(MAKE) test-proxy LISTING_ID=$(or $(LISTING_ID),) DURATION=60
+
